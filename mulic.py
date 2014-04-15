@@ -18,37 +18,31 @@ def parse_helper(prog):
             stack.append(tok)
     return stack
 
+
+last_reg =lambda x : x[-1][1]
+
 class Add:
     args = 2
     def run(x, y):
         x = x[0] + y[0]
-        return (x,x)
+        return [x]
     def compile(x, y):
-        free_reg(y[1])
-        return ("ADD %s, %s" % (x[1],y[1]), x[1])
-class Sub:
-    args = 2
-    def run(x, y):
-        x = x - y
-        return (x,x)
-    def compile(x, y):
-        free_reg(y)
-        return ("SUB %s, %s" % (x,y), x)
+        x = x + y + [("ADD %s, %s" % (last_reg(x),last_reg(y)), last_reg(x))]
+        return x
 class In:
     args = 1
     def run(x):
-        x=int(input("%s> " % x))
-        return (x,x)
+        x=int(input("%s> " % x[0]))
+        return [x]
     def compile(x):
         reg = get_reg()
-        return ("IN %s, %s" % (reg, x[0]), reg)
+        return [("IN %s, %s" % (reg, x[0]), reg)]
 class Out:
     args = 2
     def run(x, y):
-        print("%s:\t%d"% (x, y[0]))
-        return (None, None)
+        print("%s:\t%d"% (x[0], y[0]))
     def compile(x, y):
-        return ("OUT %s, %s" % (x,y[1]),y[1])
+        return [("OUT %s, %s" % (x[0],last_reg(y)),last_reg(y))]
 
 
 next_jump = 0
@@ -56,6 +50,7 @@ def get_next_jump():
     global next_jump
     next_jump += 1
     return "trgt%d" % next_jump
+all_instr = lambda x : "\n".join([i[0] for i in x])
 
 class If:
     args = 3
@@ -63,10 +58,10 @@ class If:
         ex = run(ex)
         if ex[0] == 1:
             x = run(t)
-            return (x,x)
+            return [x]
         else:
             x = run(f)
-            return (x,x)
+            return [x]
     def compile(ex, t, f):
         tgt = get_next_jump();
         tend = get_next_jump();
@@ -75,26 +70,25 @@ class If:
         f = compile(f, False)
         ex = compile(ex, False)
 
-        s = ex[0] + "\n"
-        s += "SUB %s,1\n" % ex[1]
+        s = all_instr(ex) + "\n"
+        s += "SUBI %s,1\n" % last_reg(ex)
         s += "BRNE %s\n" % tgt
-        s += t[0] + "\n"
+        s += all_instr(t) + "\n"
         s += "JMP %s\n" % tend
         s += "%s:\n" % tgt
-        s += f[0] + "\n"
+        s += all_instr(f) + "\n"
         s += "%s:\n" % tend
 
         return (s, None)
 
 class Load:
-    def run(x): return (x,x)
+    def run(x): return [x]
     def compile(x):
         reg = get_reg()
-        return ("LDI %s, %d" % (reg, x), reg)
+        return [("LDI %s, %d" % (reg, x), reg)]
         
 primatives = {
     "add": Add,
-    "sub": Sub,
     "in":  In,
     "out": Out,
 }
@@ -106,60 +100,60 @@ macros = {
 def walk_program(prog, execfn, env, printit):
     if type(prog) is list:
         r = walk_program(prog[0], execfn, env, printit)
-        if r in env['procs']:
-            cmd = env['procs'][r]
-            ret = [None, None]
-            if cmd.args == 0:
-                ret = getattr(cmd, execfn)()
-            elif cmd.args == 1:
-                ret = getattr(cmd, execfn)(
-                    walk_program(prog[1], execfn, env, printit)
-                )
-            elif cmd.args == 2:
-                ret = getattr(cmd, execfn)(
-                    walk_program(prog[1], execfn, env, printit),
-                    walk_program(prog[2], execfn, env, printit)
-                )
-            elif cmd.args == 3:
-                ret = getattr(cmd, execfn)(
-                    walk_program(prog[1], execfn, env, printit),
-                    walk_program(prog[2], execfn, env, printit),
-                    walk_program(prog[3], execfn, env, printit)
-                )
-            if printit and ret[0] != None:
-                print(ret[0])
+        if type(r[0]) is not list:
+            ret = [(None,None)]
+            if r[0] in env['procs']:
+                cmd = env['procs'][r[0]]
+                if cmd.args == 0:
+                    ret = getattr(cmd, execfn)()
+                elif cmd.args == 1:
+                    ret = getattr(cmd, execfn)(
+                        walk_program(prog[1], execfn, env, printit)
+                    )
+                elif cmd.args == 2:
+                    ret = getattr(cmd, execfn)(
+                        walk_program(prog[1], execfn, env, printit),
+                        walk_program(prog[2], execfn, env, printit)
+                    )
+                elif cmd.args == 3:
+                    ret = getattr(cmd, execfn)(
+                        walk_program(prog[1], execfn, env, printit),
+                        walk_program(prog[2], execfn, env, printit),
+                        walk_program(prog[3], execfn, env, printit)
+                    )
+            elif r[0] in env['macros']:
+                cmd = env['macros'][r[0]]
+                if cmd.args == 0:
+                    ret = getattr(cmd, execfn)()
+                elif cmd.args == 1:
+                    ret = getattr(cmd, execfn)(
+                        prog[1]
+                    )
+                elif cmd.args == 2:
+                    ret = getattr(cmd, execfn)(
+                        prog[1],
+                        prog[2],
+                    )
+                elif cmd.args == 3:
+                    ret = getattr(cmd, execfn)(
+                        prog[1],
+                        prog[2],
+                        prog[3],
+                    )
+            else:
+                print(r)
+                return r
             return ret
-        if r in env['macros']:
-            cmd = env['macros'][r]
-            ret = [None, None]
-            if cmd.args == 0:
-                ret = getattr(cmd, execfn)()
-            elif cmd.args == 1:
-                ret = getattr(cmd, execfn)(
-                    prog[1]
-                )
-            elif cmd.args == 2:
-                ret = getattr(cmd, execfn)(
-                    prog[1],
-                    prog[2],
-                )
-            elif cmd.args == 3:
-                ret = getattr(cmd, execfn)(
-                    prog[1],
-                    prog[2],
-                    prog[3],
-                )
-            if printit and ret[0] != None:
-                print(ret[0])
-            return ret
+        if len(prog) > 1:
+            prog.pop(0)
+            return walk_program(prog, execfn, env, printit)
         return r
     else:
         if prog.isdigit():
             ld = getattr(Load, execfn)(int(prog))
-            if printit: print(ld[0])
             return ld
         else:
-            return prog
+            return [prog]
 reg_free = [ "r%d" % i for i in range(32) ]
 reg_used = []
 
@@ -189,8 +183,9 @@ def compile(prog, printit = True):
 
 prog = "(out PORTC (add (in PORTB) (add 2 2)))"
 prog = """
-(if (in PORTF) (out PORTC (add 3 (in PORTB)))
-               (out PORTA (add 4 (in PORTC))))
+(if (in PORTF) ((out PORTC (add (add 1 2) (in PORTB)))
+                (out PORTC 55))
+               (out PORTA (add (add 2 2) (in PORTC))))
 (out PORTD 42)
 """
 print(prog)
@@ -198,4 +193,4 @@ prog = parse(prog)
 print(prog)
 
 run(deepcopy(prog))
-compile(deepcopy(prog))
+print(all_instr(compile(deepcopy(prog))))
