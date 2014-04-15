@@ -20,14 +20,35 @@ def parse_helper(prog):
 
 class Add:
     def run(x, y):
-        x = int(x) + int(y)
+        x = x + y
         return x
     def compile(x, y):
         free_reg(y)
         return ("ADD %s, %s" % (x,y), x)
+class Sub:
+    def run(x, y):
+        x = x - y
+        return x
+    def compile(x, y):
+        free_reg(y)
+        return ("SUB %s, %s" % (x,y), x)
+class In:
+    def run(x):
+        return int(input("%s> " % x))
+    def compile(x):
+        reg = get_reg()
+        return ("IN %s, %s" % (reg, x), reg)
+class Out:
+    def run(x, y):
+        print("%s:\t%d"% (x, y))
+    def compile(x, y):
+        return ("OUT %s, %s" % (x,y),y)
 
 primatives = {
-    "add": (2, Add)
+    "add": (2, Add),
+    "sub": (2, Sub),
+    "in": (1, In),
+    "out": (2, Out),
 }
 
 def run(prog):
@@ -43,9 +64,12 @@ def run(prog):
                 return cmd[1].run(run(prog[1]), run(prog[2]))
         return r
     else:
-        return prog
+        if prog.isdigit():
+            return int(prog)
+        else:
+            return prog
 
-reg_free = [ "r%d" % i for i in range(32)]
+reg_free = [ "r%d" % i for i in range(32) ]
 reg_used = []
 
 def get_reg():
@@ -79,15 +103,17 @@ def compile(prog):
         return r
     else:
         # Just assume that non numbers are proc names
-        if not prog.isdigit():
-            return prog
-        else:
+        if prog.isdigit():
             reg = get_reg()
             print("LDI %s, %d" % (reg, int(prog)))
             return reg
+        else:
+            return prog
 
-prog = parse("(add (add 1 1) (add 2 2))")
+prog = "(out PORTC (add (in PORTB) (add 2 2)))"
+print(prog)
+prog = parse(prog)
+print(prog)
 
-print(deepcopy(prog))
 run(deepcopy(prog))
 compile(deepcopy(prog))
