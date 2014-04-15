@@ -41,6 +41,7 @@ class Out:
     args = 2
     def run(x, y):
         print("%s:\t%d"% (x[0], y[0]))
+        return [(None, None)]
     def compile(x, y):
         return [("OUT %s, %s" % (x[0],last_reg(y)),last_reg(y))]
 
@@ -79,7 +80,7 @@ class If:
         s += all_instr(f) + "\n"
         s += "%s:\n" % tend
 
-        return (s, None)
+        return [(s, None)]
 
 class Load:
     def run(x): return [x]
@@ -101,7 +102,7 @@ def walk_program(prog, execfn, env, printit):
     if type(prog) is list:
         r = walk_program(prog[0], execfn, env, printit)
         if type(r[0]) is not list:
-            ret = [(None,None)]
+            ret = None
             if r[0] in env['procs']:
                 cmd = env['procs'][r[0]]
                 if cmd.args == 0:
@@ -141,7 +142,6 @@ def walk_program(prog, execfn, env, printit):
                         prog[3],
                     )
             else:
-                print(r)
                 return r
             return ret
         if len(prog) > 1:
