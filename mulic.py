@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from copy import deepcopy
+import sys
 
 def parse(prog):
     prog = prog.replace('(', ' ( ').replace(')', ' ) ').split()
@@ -13,38 +14,13 @@ def parse_helper(prog):
         if tok == '(':
             stack.append(parse_helper(prog))
         elif tok == ')':
-            return stack
+            return tuple(stack)
         else:
             stack.append(tok)
     return stack
 
 
 last_reg =lambda x : x[-1][1]
-
-class Add:
-    args = 2
-    def run(x, y):
-        x = x[0] + y[0]
-        return [x]
-    def compile(x, y):
-        x = x + y + [("ADD %s, %s" % (last_reg(x),last_reg(y)), last_reg(x))]
-        return x
-class In:
-    args = 1
-    def run(x):
-        x=int(input("%s> " % x[0]))
-        return [x]
-    def compile(x):
-        reg = get_reg()
-        return [("IN %s, %s" % (reg, x[0]), reg)]
-class Out:
-    args = 2
-    def run(x, y):
-        print("%s:\t%d"% (x[0], y[0]))
-        return [(None, None)]
-    def compile(x, y):
-        return [("OUT %s, %s" % (x[0],last_reg(y)),last_reg(y))]
-
 
 next_jump = 0
 def get_next_jump():
@@ -53,23 +29,60 @@ def get_next_jump():
     return "trgt%d" % next_jump
 all_instr = lambda x : "\n".join([i[0] for i in x])
 
+class Add:
+    @staticmethod
+    def run(env, args):
+        x = args[0]
+        y = args[1]
+        x = x[0] + y[0]
+        return [x]
+    @staticmethod
+    def compile(env, args):
+        x = args[0]
+        y = args[1]
+        x = x + y + [("ADD %s, %s" % (last_reg(x),last_reg(y)), last_reg(x))]
+        return x
+class In:
+    @staticmethod
+    def run(env, x):
+        x=int(input("%s> " % x[0][0]))
+        return [x]
+    @staticmethod
+    def compile(env, x):
+        reg = get_reg()
+        return [("IN %s, %s" % (reg, x[0][0]), reg)]
+class Out:
+    @staticmethod
+    def run(env, args):
+        x = args[0]
+        y = args[1]
+        print("%s:\t%d"% (x[0], y[0]))
+        return [(None, None)]
+    @staticmethod
+    def compile(env, args):
+        return [("OUT %s, %s" % (x[0][0],last_reg(y)),last_reg(y))]
+
 class If:
     args = 3
-    def run(ex, t, f):
-        ex = run(ex)
+    def run(env, args):
+        ex = args[0]
+        t = args[1]
+        f = args[3]
+
+        ex = run(ex, evn)
         if ex[0] == 1:
-            x = run(t)
+            x = run(t, env)
             return [x]
         else:
-            x = run(f)
+            x = run(f, env)
             return [x]
     def compile(ex, t, f):
         tgt = get_next_jump();
         tend = get_next_jump();
 
-        t = compile(t, False)
-        f = compile(f, False)
-        ex = compile(ex, False)
+        t = compile(t, env)
+        f = compile(f, env)
+        ex = compile(ex, env)
 
         s = all_instr(ex) + "\n"
         s += "SUBI %s,1\n" % last_reg(ex)
@@ -98,62 +111,31 @@ macros = {
     "if": If
 }
 
-def walk_program(prog, execfn, env, printit):
+def walk_program(prog, execfn, env):
     if type(prog) is list:
-        r = walk_program(prog[0], execfn, env, printit)
-        if type(r[0]) is not list:
-            ret = None
-            if r[0] in env['procs']:
-                cmd = env['procs'][r[0]]
-                if cmd.args == 0:
-                    ret = getattr(cmd, execfn)()
-                elif cmd.args == 1:
-                    ret = getattr(cmd, execfn)(
-                        walk_program(prog[1], execfn, env, printit)
-                    )
-                elif cmd.args == 2:
-                    ret = getattr(cmd, execfn)(
-                        walk_program(prog[1], execfn, env, printit),
-                        walk_program(prog[2], execfn, env, printit)
-                    )
-                elif cmd.args == 3:
-                    ret = getattr(cmd, execfn)(
-                        walk_program(prog[1], execfn, env, printit),
-                        walk_program(prog[2], execfn, env, printit),
-                        walk_program(prog[3], execfn, env, printit)
-                    )
-            elif r[0] in env['macros']:
-                cmd = env['macros'][r[0]]
-                if cmd.args == 0:
-                    ret = getattr(cmd, execfn)()
-                elif cmd.args == 1:
-                    ret = getattr(cmd, execfn)(
-                        prog[1]
-                    )
-                elif cmd.args == 2:
-                    ret = getattr(cmd, execfn)(
-                        prog[1],
-                        prog[2],
-                    )
-                elif cmd.args == 3:
-                    ret = getattr(cmd, execfn)(
-                        prog[1],
-                        prog[2],
-                        prog[3],
-                    )
-            else:
-                return r
-            return ret
-        if len(prog) > 1:
-            prog.pop(0)
-            return walk_program(prog, execfn, env, printit)
-        return r
+        accum = []
+        for subprog in prog:
+            accum.append(walk_program(subprog, execfn, env))
+        return accum
+    elif type(prog) is tuple:
+       cmd = walk_program(prog[0], execfn, env)
+       if cmd in env['procs']:
+            cmd = env['procs'][cmd]
+            args = []
+            for i in range(1,len(prog)):
+                args.append(walk_program(prog[i], execfn, env))
+            return getattr(cmd, execfn)(env, args)
+       elif cmd in env['macros']:
+            cmd = env['macros'][cmd]
+            args = []
+            for i in range(1,len(prog)):
+                args.append(walk_program(prog[i], execfn, env))
+            return getattr(cmd, execfn)(env, args)
     else:
         if prog.isdigit():
-            ld = getattr(Load, execfn)(int(prog))
-            return ld
-        else:
-            return [prog]
+            return int(prog)
+        return prog
+
 reg_free = [ "r%d" % i for i in range(32) ]
 reg_used = []
 
@@ -168,18 +150,20 @@ def free_reg(reg):
     x = reg_free.append(reg)
     reg_used.remove(reg)
 
-def run(prog, printit = True):
-    env = {
-        "procs": primatives,
-        "macros": macros,
-    }
-    return walk_program(prog, 'run', env, printit)
-def compile(prog, printit = True):
-    env = {
-        "procs": primatives,
-        "macros": macros,
-    }
-    return walk_program(prog, 'compile', env, printit)
+def run(prog, env = None):
+    if env is None:
+        env = {
+            "procs": primatives,
+            "macros": macros,
+        }
+    return walk_program(prog, 'run', env)
+def compile(prog, env = None):
+    if env is None:
+        env = {
+            "procs": primatives,
+            "macros": macros,
+        }
+    return walk_program(prog, 'compile', env)
 
 prog = "(out PORTC (add (in PORTB) (add 2 2)))"
 prog = """
