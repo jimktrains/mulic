@@ -24,4 +24,4 @@ When being compiled, it'll produce:
     ADD r31, r30
     OUT PORTC, r31
 
-I still need to get macros (think delayed execution as in an if statement) working, as right now I assume each branch will execute. I also need list support (it is LISP afterall).
+I still need to get macros (think delayed execution as in an if statement) working, as right now I assume each branch will execute. I also need list support (it is LISP afterall). Also, I need to be able to define lambdas and byte arrays.  It's a work in progress.
